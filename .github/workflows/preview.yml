@@ -1,0 +1,124 @@
+# Publishes the preview of forsgren's metrics site at feta.forsgren.forsgren.be.
+# Started by forsgren after a push to main (forsgren#222), with the pushed sha.
+# It builds forsgren at that sha and renders the data forsgren-metrics has
+# already collected. It never collects: no token, no collect step.
+name: preview
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Full 40-digit commit of yveshanoulle/forsgren to preview
+        required: true
+        type: string
+permissions: {}
+jobs:
+  preview:
+    name: Render and publish the preview
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read   # check out this repository, forsgren and the public metrics data
+      pages: write     # publish to this repository's GitHub Pages
+      id-token: write  # lets actions/deploy-pages prove the run's identity
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    # Only the newest preview deploys: a newer push cancels the run in flight.
+    # Nothing is committed here, so a cancelled run leaves no half state.
+    concurrency:
+      group: preview
+      cancel-in-progress: true
+    steps:
+      - name: Check out this repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check the sha
+        id: sha
+        shell: bash
+        env:
+          SHA: ${{ inputs.sha }}
+        run: |
+          set -euo pipefail
+          echo "sha=$(Scripts/check_sha.sh "$SHA")" >> "$GITHUB_OUTPUT"
+
+      - name: Check out forsgren at the sha
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: yveshanoulle/forsgren
+          ref: ${{ steps.sha.outputs.sha }}
+          path: forsgren
+          persist-credentials: false
+
+      - name: Check out the collected metrics data
+        id: metrics
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: yveshanoulle/forsgren-metrics
+          ref: main
+          path: metrics
+          sparse-checkout: |
+            data
+            forsgren.config.yml
+          persist-credentials: false
+
+      - name: Check the metrics data
+        shell: bash
+        run: |
+          set -euo pipefail
+          Scripts/check_data.sh metrics
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+        with:
+          go-version-file: forsgren/go.mod
+          cache: false
+
+      - name: Build forsgren
+        shell: bash
+        env:
+          GOBIN: ${{ runner.temp }}/forsgren-bin
+        run: |
+          set -euo pipefail
+          cd forsgren
+          go install ./cmd/forsgren
+          echo "${GOBIN}" >> "$GITHUB_PATH"
+
+      - name: Render the page
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd metrics
+          forsgren render --out "${RUNNER_TEMP}/site" --config forsgren.config.yml --data data/deployments.csv
+
+      - name: Write the run summary
+        shell: bash
+        env:
+          SHA: ${{ steps.sha.outputs.sha }}
+          METRICS_SHA: ${{ steps.metrics.outputs.commit }}
+        run: |
+          {
+            echo "Preview of forsgren at \`${SHA}\` on the data of forsgren-metrics at \`${METRICS_SHA}\`."
+            echo "Nothing was collected."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the page
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9  # v5.0.0
+        with:
+          path: ${{ runner.temp }}/site
+
+      - name: Publish to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346  # v5.0.1
+
+      # forsgren's own live check, from the checked-out sha: redirect, validated
+      # certificate, 200, text/html charset=utf-8, stylesheet 200 text/css. A
+      # fresh custom domain may need a minute, hence more tries than the default.
+      - name: Live check
+        shell: bash
+        env:
+          LIVE_CHECK_TRIES: "12"
+          LIVE_CHECK_DELAY: "10"
+        run: |
+          set -euo pipefail
+          forsgren/Scripts/live_check.sh https://feta.forsgren.forsgren.be
