@@ -1,0 +1,26 @@
+# Proposes updates of the GitHub Actions pinned in .github/workflows/preview.yml.
+# forsgren itself is built from a given commit, so only these pins need it.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    # Every day, weekends included.
+    schedule:
+      interval: cron
+      cronjob: "0 4 * * *"   # 04:00 UTC, before the working day
+      timezone: UTC
+    # A pull request title and commit start with this prefix.
+    commit-message:
+      prefix: actions
+    # One pull request for all minor and patch updates of the actions, so
+    # a run does not open one pull request per action. A major update stays
+    # its own pull request.
+    groups:
+      actions:
+        patterns:
+          - "*"
+        update-types: [minor, patch]
+    # An update is proposed once it is 3 days old: a window for a bad release
+    # to be replaced or yanked.
+    cooldown:
+      default-days: 3
