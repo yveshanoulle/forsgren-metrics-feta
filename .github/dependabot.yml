@@ -1,5 +1,9 @@
-# Proposes updates of the GitHub Actions pinned in .github/workflows/preview.yml.
+# Proposes updates of the GitHub Actions pinned in .github/workflows/, among
+# them the forsgren merge policy the Dependabot merge workflow calls.
 # forsgren itself is built from a given commit, so only these pins need it.
+# Patch and minor updates merge on their own once Checks is green
+# (.github/dependabot-merge.conf, DEPENDABOT_AUTOMERGE on); a major is a
+# manual merge.
 version: 2
 updates:
   - package-ecosystem: github-actions

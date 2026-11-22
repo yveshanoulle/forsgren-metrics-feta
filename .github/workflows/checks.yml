@@ -1,0 +1,68 @@
+# The checks of every pull request into main: actionlint on the workflows and
+# yamllint on every tracked YAML file. The Dependabot merge policy
+# (.github/workflows/dependabot_merge.yml) waits for this workflow: a
+# Dependabot pull request merges on its own only after a completed,
+# successful run of it on its current head commit
+# (.github/dependabot-merge.conf, its workflow line).
+#
+# Both tools are the versions forsgren's lint job pins, installed from
+# checksum-verified builds: actionlint from its GitHub release, compared with
+# the project's published sha256 before it is unpacked; yamllint from PyPI
+# wheels with the hashes in Scripts/yamllint_requirements.txt. actionlint
+# also runs the shellcheck of the hosted image on each run: block.
+# Nothing is written: no secret, contents: read only.
+name: Checks
+on:
+  pull_request:
+    branches: [main]
+permissions: {}
+jobs:
+  lint:
+    name: actionlint and yamllint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read   # check out this repository
+    steps:
+      - name: Check out this repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install actionlint 1.7.12
+        shell: bash
+        env:
+          URL: https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          set -euo pipefail
+          bin="${RUNNER_TEMP}/bin"
+          mkdir -p "$bin"
+          curl -fsSL --retry 3 -o "${RUNNER_TEMP}/actionlint.tar.gz" "$URL"
+          echo "${SHA256}  ${RUNNER_TEMP}/actionlint.tar.gz" | sha256sum -c -
+          tar -xzf "${RUNNER_TEMP}/actionlint.tar.gz" -C "$bin" actionlint
+          "${bin}/actionlint" --version
+          echo "$bin" >> "$GITHUB_PATH"
+
+      - name: Install yamllint 1.38.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          venv="${RUNNER_TEMP}/yamllint-venv"
+          python3 -m venv "$venv"
+          "${venv}/bin/pip" install --quiet --disable-pip-version-check --require-hashes \
+            --only-binary=:all: --no-deps -r Scripts/yamllint_requirements.txt
+          "${venv}/bin/yamllint" --version
+          echo "${venv}/bin" >> "$GITHUB_PATH"
+
+      - name: actionlint
+        shell: bash
+        run: |
+          set -euo pipefail
+          actionlint
+
+      - name: yamllint
+        shell: bash
+        run: |
+          set -euo pipefail
+          git ls-files -z '*.yml' '*.yaml' | xargs -0 yamllint -c .yamllint.yml

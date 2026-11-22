@@ -1,0 +1,53 @@
+# The Dependabot merge policy of this repository: a caller of forsgren's
+# reusable .github/workflows/dependabot_merge_policy.yml, pinned by commit,
+# as forsgren's docs/dependabot-merge.md describes and as forsgren's own
+# dependabot_merge.yml calls it. When Checks completes for a Dependabot pull
+# request, the called workflow judges that pull request against
+# .github/dependabot-merge.conf (read from the default branch), keeps one
+# comment on it and, with the switch on, squash-merges an ELIGIBLE one at
+# the head commit it checked. Fail closed: any condition it cannot prove
+# (author, branch, head, every expected check green, mergeable, clean, not
+# behind main) is NOT ELIGIBLE. Every step and every safeguard is in the
+# called file.
+#
+# Kill switch, the repository variable DEPENDABOT_AUTOMERGE, passed as the
+# input mode: off = log only, no comment; on = comment "eligible: merging" or
+# "not eligible: no merge" and merge when ELIGIBLE; unset, dry-run or any
+# other value = comment "dry run: would merge" or "dry run: would not
+# merge", merge nothing.
+#
+# The merge identity, the Actions secret DEPENDABOT_MERGE_TOKEN: a
+# fine-grained token with Contents and Pull requests read and write on this
+# repository, read by the called workflow's merge step alone, and only in
+# mode on for an ELIGIBLE pull request. A merge made with the job token
+# would start no workflow on the merge commit; the called workflow never
+# falls back to it, and an empty token fails the merge step.
+#
+# zizmor's dangerous-triggers audit flags every workflow_run trigger, so the
+# workflow_run line carries the one inline ignore of that rule; the
+# safeguards that make it acceptable are the called workflow's (forsgren's
+# docs/dependabot-merge.md, Security). Scripts/test_dependabot_merge.sh pins
+# this file and the settings file.
+name: Dependabot merge
+
+on:
+  workflow_run:  # zizmor: ignore[dangerous-triggers]
+    workflows: [Checks]
+    types: [completed]
+
+# Exactly what the called workflow declares: a called workflow can only keep
+# or narrow what its caller grants.
+permissions:
+  contents: read
+  pull-requests: write
+  actions: read
+
+jobs:
+  policy:
+    name: Dependabot merge policy
+    uses: yveshanoulle/forsgren/.github/workflows/dependabot_merge_policy.yml@5690e93e5c66235c6f1ad8f35ec9b6debb3feaba  # v1.35.1
+    with:
+      settings-file: .github/dependabot-merge.conf
+      mode: ${{ vars.DEPENDABOT_AUTOMERGE }}
+    secrets:
+      DEPENDABOT_MERGE_TOKEN: ${{ secrets.DEPENDABOT_MERGE_TOKEN }}
